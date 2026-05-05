@@ -83,7 +83,7 @@ async def send_chart(update, df, title, filename, chart_type='line'):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Markdown xatoligini oldini olish uchun \_ ishlatildi
-    msg = (
+    msg = r"""(
         "📜 **Asosiy buyruqlar:**\n\n"
         "/hisobot — Umumiy qoldiq\n"
         "/kunlik — 10 kunlik balans grafigi\n"
@@ -93,7 +93,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/categories — Kategoriya ro'yxati\n"
         "/add\_cat [nomi] — Yangi kategoriya qo'shish\n\n"
         "💡 *Masalan:* 'taksi 20000' yoki 'oylik oldim 5000000'"
-    )
+    )"""
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
