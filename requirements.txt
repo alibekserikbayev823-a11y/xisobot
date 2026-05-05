@@ -1,0 +1,4 @@
+python-telegram-bot --pre
+pandas
+matplotlib
+python-dotenv
