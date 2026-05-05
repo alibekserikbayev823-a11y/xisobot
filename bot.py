@@ -17,32 +17,32 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        user_id INTEGER, 
-        type TEXT, 
-        amount REAL, 
-        category TEXT, 
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        type TEXT,
+        amount REAL,
+        category TEXT,
         date TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS user_categories (
-        user_id INTEGER, 
-        category_name TEXT, 
+        user_id INTEGER,
+        category_name TEXT,
         UNIQUE(user_id, category_name))""")
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- FUNKSIYALAR ---
+# --- YORDAMCHI FUNKSIYALAR ---
 
 def parse_text(text, user_id):
     text = text.lower()
     amount_match = re.findall(r'\d+', text.replace(',', '').replace(' ', ''))
     if not amount_match: return None
     amount = int(amount_match[0])
-    
+
     if any(word in text for word in ["kirim", "oldim", "oylik", "+", "tushdi", "daromad"]):
         return ("Kirim", amount, "Daromad")
-    
+
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT category_name FROM user_categories WHERE user_id=?", (user_id,))
@@ -79,20 +79,21 @@ async def send_chart(update, df, title, filename, chart_type='line'):
     await update.message.reply_photo(photo=open(filename, "rb"), caption=f"📊 {title}")
     if os.path.exists(filename): os.remove(filename)
 
-# --- BUYRUQLAR ---
+# --- BUYRUQ HANDLERLARI ---
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Markdown xatoligini oldini olish uchun \_ ishlatildi
     msg = (
-        "📜 **Buyruqlar:**\n"
-        "/hisobot — Umumiy balans\n"
-        "/kunlik — 10 kunlik grafik\n"
-        "/haftalik — 4 haftalik dinamika\n"
-        "/oylik — 1 yillik tahlil\n"
-        "/pie — Kategoriyalar taqsimoti\n"
-        "/categories — Kategoriyalar ro'yxati\n"
-        "/add\_cat [nomi] — Yangi kategoriya qo'shish"
+        "📜 **Asosiy buyruqlar:**\n\n"
+        "/hisobot — Umumiy qoldiq\n"
+        "/kunlik — 10 kunlik balans grafigi\n"
+        "/haftalik — 4 haftalik tahlil\n"
+        "/oylik — 1 yillik tarix\n"
+        "/pie — Xarajatlar kategoriyasi (diagramma)\n"
+        "/categories — Kategoriya ro'yxati\n"
+        "/add\_cat [nomi] — Yangi kategoriya qo'shish\n\n"
+        "💡 *Masalan:* 'taksi 20000' yoki 'oylik oldim 5000000'"
     )
-    # Markdown xatoligi bermasligi uchun qochirildi
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,11 +102,16 @@ async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     df = pd.read_sql_query("SELECT type, amount FROM transactions WHERE user_id=?", conn, params=(user_id,))
     conn.close()
     if df.empty:
-        await update.message.reply_text("Ma'lumot yo'q.")
+        await update.message.reply_text("Hozircha hech qanday ma'lumot yo'q.")
         return
     k = df[df['type']=='Kirim']['amount'].sum()
     ch = df[df['type']=='Chiqim']['amount'].sum()
-    await update.message.reply_text(f"💰 **Kirim:** {k:,} so'm\n💸 **Chiqim:** {ch:,} so'm\n🧾 **Qoldiq:** {k-ch:,} so'm", parse_mode="Markdown")
+    await update.message.reply_text(
+        f"💰 **Kirim:** {k:,} so'm\n"
+        f"💸 **Chiqim:** {ch:,} so'm\n"
+        f"🧾 **Qoldiq:** {k-ch:,} so'm",
+        parse_mode="Markdown"
+    )
 
 async def kunlik(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -145,12 +151,12 @@ async def list_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT category_name FROM user_categories WHERE user_id=?", (user_id,))
     cats = [r[0] for r in c.fetchall()]
     conn.close()
-    res = "📁 **Sizning kategoriyalaringiz:**\n\n" + ("\n".join([f"• {c}" for c in cats]) if cats else "Hali kategoriya qo'shilmagan.")
+    res = "📁 **Kategoriyalaringiz:**\n\n" + ("\n".join([f"• {c}" for c in cats]) if cats else "Hali kategoriya qo'shilmagan.")
     await update.message.reply_text(res, parse_mode="Markdown")
 
 async def add_cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Kategoriya nomini yozing. Masalan: `/add_cat Taksi`", parse_mode="Markdown")
+        await update.message.reply_text("Nomini yozing. Masalan: `/add_cat Bozor`", parse_mode="Markdown")
         return
     cat = context.args[0].capitalize()
     conn = sqlite3.connect(DB_NAME)
@@ -158,9 +164,9 @@ async def add_cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         c.execute("INSERT INTO user_categories VALUES (?, ?)", (update.message.from_user.id, cat))
         conn.commit()
-        await update.message.reply_text(f"✅ '{cat}' kategoriyasi qo'shildi.")
+        await update.message.reply_text(f"✅ '{cat}' ro'yxatga qo'shildi.")
     except:
-        await update.message.reply_text("Bu kategoriya allaqachon mavjud.")
+        await update.message.reply_text("Bu kategoriya allaqachon bor.")
     finally:
         conn.close()
 
@@ -172,29 +178,237 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
-        c.execute("INSERT INTO transactions (user_id, type, amount, category, date) VALUES (?, ?, ?, ?, ?)", 
+        c.execute("INSERT INTO transactions (user_id, type, amount, category, date) VALUES (?, ?, ?, ?, ?)",
                   (user_id, t, a, cat, now))
         conn.commit()
         conn.close()
         await update.message.reply_text(f"✅ Saqlandi: **{t}** {a:,} so'm\n📂 Kategoriya: **{cat}**", parse_mode="Markdown")
 
+# --- ASOSIY QISM ---
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
+    if not TOKEN:
+        print("❌ BOT_TOKEN topilmadi! .env faylini tekshiring.")
+    else:
+        app = ApplicationBuilder().token(TOKEN).build()
+
+        # Barcha handlerlarni ro'yxatdan o'tkazish
+        app.add_handler(CommandHandler("start", help_command))
+        app.add_handler(CommandHandler("help", help_command))
+        app.add_handler(CommandHandler("hisobot", hisobot))
+        app.add_handler(CommandHandler("kunlik", kunlik))
+        app.add_handler(CommandHandler("haftalik", haftalik))
+        app.add_handler(CommandHandler("oylik", oylik))
+        app.add_handler(CommandHandler("pie", pie))
+        app.add_handler(CommandHandler("categories", list_categories))
+        app.add_handler(CommandHandler("add_cat", add_cat))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        print("🚀 Bot muvaffaqiyatli ishga tushdi...")
+        app.run_polling(drop_pending_updates=True)
+
+
+
+
+
+
+# import sqlite3
+# import re
+# import os
+# from datetime import datetime, timedelta
+# import pandas as pd
+# import matplotlib.pyplot as plt
+# from dotenv import load_dotenv
+# from telegram import Update
+# from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+# # --- SOZLAMALAR ---
+# load_dotenv()
+# TOKEN = os.getenv("BOT_TOKEN")
+# DB_NAME = "hisobchi_pro.db"
+
+# def init_db():
+#     conn = sqlite3.connect(DB_NAME)
+#     c = conn.cursor()
+#     c.execute("""CREATE TABLE IF NOT EXISTS transactions (
+#         id INTEGER PRIMARY KEY AUTOINCREMENT, 
+#         user_id INTEGER, 
+#         type TEXT, 
+#         amount REAL, 
+#         category TEXT, 
+#         date TEXT)""")
+#     c.execute("""CREATE TABLE IF NOT EXISTS user_categories (
+#         user_id INTEGER, 
+#         category_name TEXT, 
+#         UNIQUE(user_id, category_name))""")
+#     conn.commit()
+#     conn.close()
+
+# init_db()
+
+# # --- FUNKSIYALAR ---
+
+# def parse_text(text, user_id):
+#     text = text.lower()
+#     amount_match = re.findall(r'\d+', text.replace(',', '').replace(' ', ''))
+#     if not amount_match: return None
+#     amount = int(amount_match[0])
     
-    # Handlerlarni ro'yxatdan o'tkazish
-    app.add_handler(CommandHandler("start", help_command))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("hisobot", hisobot))
-    app.add_handler(CommandHandler("kunlik", kunlik))
-    app.add_handler(CommandHandler("haftalik", haftalik))
-    app.add_handler(CommandHandler("oylik", oylik))
-    app.add_handler(CommandHandler("pie", pie))
-    app.add_handler(CommandHandler("categories", list_categories))
-    app.add_handler(CommandHandler("add_cat", add_cat))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+#     if any(word in text for word in ["kirim", "oldim", "oylik", "+", "tushdi", "daromad"]):
+#         return ("Kirim", amount, "Daromad")
     
-    print("🚀 SQLite Bot ishga tushdi...")
-    app.run_polling(drop_pending_updates=True)
+#     conn = sqlite3.connect(DB_NAME)
+#     c = conn.cursor()
+#     c.execute("SELECT category_name FROM user_categories WHERE user_id=?", (user_id,))
+#     user_cats = [row[0].lower() for row in c.fetchall()]
+#     conn.close()
+
+#     for cat in user_cats:
+#         if cat in text: return ("Chiqim", amount, cat.capitalize())
+#     return ("Chiqim", amount, "Boshqa")
+
+# async def send_chart(update, df, title, filename, chart_type='line'):
+#     if df.empty:
+#         await update.message.reply_text("Ma'lumot topilmadi.")
+#         return
+
+#     plt.figure(figsize=(10, 6))
+#     if chart_type == 'line':
+#         df['date'] = pd.to_datetime(df['date'])
+#         df = df.sort_values('date')
+#         df['change'] = df.apply(lambda x: x['amount'] if x['type'] == 'Kirim' else -x['amount'], axis=1)
+#         df['balance'] = df['change'].cumsum()
+#         plt.plot(df['date'], df['balance'], marker='o', color='#007bff', linewidth=2)
+#         plt.fill_between(df['date'], df['balance'], color='#007bff', alpha=0.1)
+#         plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):,}'))
+#     elif chart_type == 'pie':
+#         cat_sum = df.groupby('category')['amount'].sum()
+#         cat_sum.plot(kind='pie', autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+#         plt.ylabel('')
+
+#     plt.title(title)
+#     plt.tight_layout()
+#     plt.savefig(filename)
+#     plt.close()
+#     await update.message.reply_photo(photo=open(filename, "rb"), caption=f"📊 {title}")
+#     if os.path.exists(filename): os.remove(filename)
+
+# # --- BUYRUQLAR ---
+
+# async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     msg = (
+#         "📜 **Buyruqlar:**\n"
+#         "/hisobot — Umumiy balans\n"
+#         "/kunlik — 10 kunlik grafik\n"
+#         "/haftalik — 4 haftalik dinamika\n"
+#         "/oylik — 1 yillik tahlil\n"
+#         "/pie — Kategoriyalar taqsimoti\n"
+#         "/categories — Kategoriyalar ro'yxati\n"
+#         "/add\_cat [nomi] — Yangi kategoriya qo'shish"
+#     )
+#     # Markdown xatoligi bermasligi uchun qochirildi
+#     await update.message.reply_text(msg, parse_mode="Markdown")
+
+# async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     df = pd.read_sql_query("SELECT type, amount FROM transactions WHERE user_id=?", conn, params=(user_id,))
+#     conn.close()
+#     if df.empty:
+#         await update.message.reply_text("Ma'lumot yo'q.")
+#         return
+#     k = df[df['type']=='Kirim']['amount'].sum()
+#     ch = df[df['type']=='Chiqim']['amount'].sum()
+#     await update.message.reply_text(f"💰 **Kirim:** {k:,} so'm\n💸 **Chiqim:** {ch:,} so'm\n🧾 **Qoldiq:** {k-ch:,} so'm", parse_mode="Markdown")
+
+# async def kunlik(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     limit = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+#     df = pd.read_sql_query("SELECT date, type, amount FROM transactions WHERE user_id=? AND date >= ?", conn, params=(user_id, limit))
+#     conn.close()
+#     await send_chart(update, df, "10 Kunlik Balans", "daily.png")
+
+# async def haftalik(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     limit = (datetime.now() - timedelta(days=28)).strftime('%Y-%m-%d')
+#     df = pd.read_sql_query("SELECT date, type, amount FROM transactions WHERE user_id=? AND date >= ?", conn, params=(user_id, limit))
+#     conn.close()
+#     await send_chart(update, df, "4 Haftalik Dinamika", "weekly.png")
+
+# async def oylik(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     limit = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+#     df = pd.read_sql_query("SELECT date, type, amount FROM transactions WHERE user_id=? AND date >= ?", conn, params=(user_id, limit))
+#     conn.close()
+#     await send_chart(update, df, "1 Yillik Tahlil", "monthly.png")
+
+# async def pie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     df = pd.read_sql_query("SELECT category, amount FROM transactions WHERE user_id=? AND type='Chiqim'", conn, params=(user_id,))
+#     conn.close()
+#     await send_chart(update, df, "Xarajatlar Taqsimoti", "pie.png", chart_type='pie')
+
+# async def list_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     conn = sqlite3.connect(DB_NAME)
+#     c = conn.cursor()
+#     c.execute("SELECT category_name FROM user_categories WHERE user_id=?", (user_id,))
+#     cats = [r[0] for r in c.fetchall()]
+#     conn.close()
+#     res = "📁 **Sizning kategoriyalaringiz:**\n\n" + ("\n".join([f"• {c}" for c in cats]) if cats else "Hali kategoriya qo'shilmagan.")
+#     await update.message.reply_text(res, parse_mode="Markdown")
+
+# async def add_cat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     if not context.args:
+#         await update.message.reply_text("Kategoriya nomini yozing. Masalan: `/add_cat Taksi`", parse_mode="Markdown")
+#         return
+#     cat = context.args[0].capitalize()
+#     conn = sqlite3.connect(DB_NAME)
+#     c = conn.cursor()
+#     try:
+#         c.execute("INSERT INTO user_categories VALUES (?, ?)", (update.message.from_user.id, cat))
+#         conn.commit()
+#         await update.message.reply_text(f"✅ '{cat}' kategoriyasi qo'shildi.")
+#     except:
+#         await update.message.reply_text("Bu kategoriya allaqachon mavjud.")
+#     finally:
+#         conn.close()
+
+# async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user_id = update.message.from_user.id
+#     res = parse_text(update.message.text, user_id)
+#     if res:
+#         t, a, cat = res
+#         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#         conn = sqlite3.connect(DB_NAME)
+#         c = conn.cursor()
+#         c.execute("INSERT INTO transactions (user_id, type, amount, category, date) VALUES (?, ?, ?, ?, ?)", 
+#                   (user_id, t, a, cat, now))
+#         conn.commit()
+#         conn.close()
+#         await update.message.reply_text(f"✅ Saqlandi: **{t}** {a:,} so'm\n📂 Kategoriya: **{cat}**", parse_mode="Markdown")
+
+# if __name__ == "__main__":
+#     app = ApplicationBuilder().token(TOKEN).build()
+    
+#     # Handlerlarni ro'yxatdan o'tkazish
+#     app.add_handler(CommandHandler("start", help_command))
+#     app.add_handler(CommandHandler("help", help_command))
+#     app.add_handler(CommandHandler("hisobot", hisobot))
+#     app.add_handler(CommandHandler("kunlik", kunlik))
+#     app.add_handler(CommandHandler("haftalik", haftalik))
+#     app.add_handler(CommandHandler("oylik", oylik))
+#     app.add_handler(CommandHandler("pie", pie))
+#     app.add_handler(CommandHandler("categories", list_categories))
+#     app.add_handler(CommandHandler("add_cat", add_cat))
+#     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+#     print("🚀 SQLite Bot ishga tushdi...")
+#     app.run_polling(drop_pending_updates=True)
 
 
 
